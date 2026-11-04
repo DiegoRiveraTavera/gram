@@ -1,5 +1,25 @@
+importScripts('/src/js/idb.js');
+importScripts('/src/js/utility.js');
+
 var CACHE_STATIC_NAME = 'static-v3';
 var CACHE_DYNAMIC_NAME = 'dynamic-v3';
+var STATIC_FILES = [
+    '/',
+    '/index.html',
+    '/offline.html',
+    '/src/js/app.js',
+    '/src/js/feed.js',
+    'src/js/idb.js',
+    // '/src/js/promise.js',
+    // '/src/js/fetch.js',
+    '/src/js/material.min.js',
+    '/src/css/app.css',
+    '/src/css/feed.css',
+    '/src/images/main-image.jpeg',
+    'https://fonts.googleapis.com/css?family=Roboto:400,700',
+    'https://fonts.googleapis.com/icon?family=Material+Icons',
+    'https://cdnjs.cloudflare.com/ajax/libs/material-design-lite/1.3.0/material.indigo-pink.min.css'
+]
 
 self.addEventListener('install', function (event) {
     console.log('[Service Worker] Installing Service Worker ...', event);
@@ -7,22 +27,7 @@ self.addEventListener('install', function (event) {
         caches.open(CACHE_STATIC_NAME)
             .then(function (cache) {
                 console.log('[Service Worker] Precaching App Shell');
-                cache.addAll([
-                    '/',
-                    '/index.html',
-                    '/offline.html',
-                    '/src/js/app.js',
-                    '/src/js/feed.js',
-                    // '/src/js/promise.js',
-                    // '/src/js/fetch.js',
-                    '/src/js/material.min.js',
-                    '/src/css/app.css',
-                    '/src/css/feed.css',
-                    '/src/images/main-image.jpeg',
-                    'https://fonts.googleapis.com/css?family=Roboto:400,700',
-                    'https://fonts.googleapis.com/icon?family=Material+Icons',
-                    'https://cdnjs.cloudflare.com/ajax/libs/material-design-lite/1.3.0/material.indigo-pink.min.css'
-                ]);
+                cache.addAll(STATIC_FILES);
             })
     )
 });
@@ -43,20 +48,42 @@ self.addEventListener('activate', function (event) {
     return self.clients.claim();
 });
 
+function isInArray(string, array) {
+    var cachePath;
+    if (string.indexOf(self.origin) === 0) {
+        // request targets domain where we serve the page from (i.e. NOT a CDN)
+        console.log('matched ', string);
+        cachePath = string.substring(self.origin.length);
+    } else {
+        // store the full request (for CDNs)
+        cachePath = string;
+    }
+    return array.indexOf(cachePath) > -1;
+}
+
 //cache-then-network-offline
 self.addEventListener('fetch', function (event) {
     var url = 'https://gram-ed160-default-rtdb.firebaseio.com/post.json';
 
     if (event.request.url.indexOf(url) > -1) {
+        event.respondWith(fetch(event.request)
+            .then(function (res) {
+                var clonedRes = res.clone();
+                clearAllData('posts')
+                    .then(function () {
+                        return clonedRes.json();
+                    })
+                    .then(function (data) {
+                        for (var key in data) {
+                            writeData('posts', data[key]);
+                        }
+                    });
+                return res;
+            })
+        );
+    } else if (isInArray(event.request.url, STATIC_FILES)) {
         event.respondWith(
-            caches.open(CACHE_DYNAMIC_NAME)
-                .then(function (cache) {
-                    return fetch(event.request)
-                        .then(function (res) {
-                            cache.put(event.request, res.clone());
-                            return res;
-                        });
-                })
+            caches.match(event.request)
         );
     } else {
         event.respondWith(
@@ -76,7 +103,9 @@ self.addEventListener('fetch', function (event) {
                             .catch(function (err) {
                                 return caches.open(CACHE_STATIC_NAME)
                                     .then(function (cache) {
+                                        if (event.request.headers.get('accept').includes('text/html')) {
                                         return cache.match('/offline.html');
+                                        }
                                     });
                             });
                     }

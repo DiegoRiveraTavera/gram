@@ -2,9 +2,13 @@ var shareImageButton = document.querySelector('#share-image-button');
 var createPostArea = document.querySelector('#create-post');
 var closeCreatePostModalButton = document.querySelector('#close-create-post-modal-btn');
 var sharedMomentsArea = document.querySelector('#shared-moments');
+var form = document.querySelector('form');
+var titleInput = document.querySelector('#title');
+var locationInput = document.querySelector('#location');
 
 function openCreatePostModal() {
-    createPostArea.style.display = 'block';
+   // createPostArea.style.display = 'block';
+   createPostArea.style.transform = 'translateY(0)';
     if (deferredPrompt) {
         deferredPrompt.prompt();
 
@@ -92,3 +96,59 @@ if ('indexedDB' in window) {
             }
         });
 }
+
+function sendData() {
+    fetch('https://gram-ed160-default-rtdb.firebaseio.com/post.json', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+            id: new Date().toISOString(),
+            title: titleInput.value,
+            location: locationInput.value,
+            image: 'https://firebasestorage.googleapis.com/v0/b/gram-ed160.appspot.com/o/sf-boat.jpg?alt=media&token=1e5c8d3b-7a2e-4f6c-9d1e-0f3b8c9e5f1a'
+        })
+    })
+        .then(function (res) {
+            console.log('Sent data', res);
+            updateUI();
+        })
+}
+
+form.addEventListener('submit', function (event) {
+    event.preventDefault();
+
+    if (titleInput.value.trim() === '' || locationInput.value.trim() === '') {
+        alert('Please enter valid data!');
+        return;
+    }
+
+    closeCreatePostModal();
+
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+        navigator.serviceWorker.ready
+            .then(function (sw) {
+                var post = {
+                    id: new Date().toISOString(),
+                    title: titleInput.value,
+                    location: locationInput.value
+                };
+                writeData('sync-posts', post)
+                    .then(function () {
+                        return sw.sync.register('sync-new-posts');
+                    })
+                    .then(function () {
+                        var snackbarContainer = document.querySelector('#confirmation-toast');
+                        var data = { message: 'Your Post was saved for syncing!' };
+                        snackbarContainer.MaterialSnackbar.showSnackbar(data);
+                    })
+                    .catch(function (err) {
+                        console.log(err);
+                    });
+            });
+    } else {
+        sendData();
+    }
+});
