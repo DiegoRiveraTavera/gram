@@ -76,22 +76,36 @@ function updateUI(data) {
 }
 
 // 1) Red
-fetch(url)
-    .then(function (res) {
-        return res.json();
-    })
-    .then(function (data) {
-        networkDataReceived = true;
-        console.log('From web', data);
-        var dataArray = [];
-        for (var key in data) {
-            dataArray.push(data[key]);
+function cargarPosts() {
+    fetch(url)
+        .then(function (res) {
+            return res.json();
+        })
+        .then(function (data) {
+            networkDataReceived = true;
+            console.log('From web', data);
+            var dataArray = [];
+            for (var key in data) {
+                dataArray.push(data[key]);
+            }
+            updateUI(dataArray);
+        })
+        .catch(function (err) {
+            console.log('Error en la petición:', err);
+        });
+}
+
+cargarPosts();
+
+// Cuando el service worker termina de sincronizar, recargamos el feed
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', function (event) {
+        if (event.data === 'posts-synced') {
+            console.log('Posts sincronizados, actualizando feed...');
+            cargarPosts();
         }
-        updateUI(dataArray);
-    })
-    .catch(function (err) {
-        console.log('Error en la petición:', err);
     });
+}
 
 // 2) IndexedDB (si la red no ha respondido o no hay conexión)
 if ('indexedDB' in window) {

@@ -1,8 +1,8 @@
 importScripts('/src/js/idb.js');
 importScripts('/src/js/utility.js');
 
-var CACHE_STATIC_NAME = 'static-v4';
-var CACHE_DYNAMIC_NAME = 'dynamic-v4';
+var CACHE_STATIC_NAME = 'static-v5';
+var CACHE_DYNAMIC_NAME = 'dynamic-v5';
 var STATIC_FILES = [
     '/',
     '/index.html',
@@ -145,6 +145,14 @@ self.addEventListener('sync', function (event) {
                                 return deleteItemFromData('sync-posts', dt.id);
                             });
                     }));
+                })
+                .then(function () {
+                    // Avisamos a la página para que vuelva a cargar el feed
+                    return self.clients.matchAll().then(function (clients) {
+                        clients.forEach(function (client) {
+                            client.postMessage('posts-synced');
+                        });
+                    });
                 })
                 .catch(function (err) {
                     console.log('Error while sending data', err);
