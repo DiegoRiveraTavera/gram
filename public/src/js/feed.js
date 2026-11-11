@@ -6,10 +6,13 @@ var form = document.querySelector('form');
 var titleInput = document.querySelector('#title');
 var locationInput = document.querySelector('#location');
 
+var url = 'https://gram-ed160-default-rtdb.firebaseio.com/post.json';
+var networkDataReceived = false;
+
 function openCreatePostModal() {
-   // createPostArea.style.display = 'block';
-   createPostArea.style.transform = 'translateY(0)';
-    if (deferredPrompt) {
+    createPostArea.style.transform = 'translateY(0)';
+
+    if (typeof deferredPrompt !== 'undefined' && deferredPrompt) {
         deferredPrompt.prompt();
 
         deferredPrompt.userChoice.then(function (choiceResult) {
@@ -27,7 +30,7 @@ function openCreatePostModal() {
 }
 
 function closeCreatePostModal() {
-    createPostArea.style.display = 'none';
+    createPostArea.style.transform = 'translateY(100vh)';
 }
 
 shareImageButton.addEventListener('click', openCreatePostModal);
@@ -56,10 +59,12 @@ function createCard(data) {
     cardTitle.appendChild(cardTitleTextElement);
     var cardSupportingText = document.createElement('div');
     cardSupportingText.className = 'mdl-card__supporting-text';
-    cardSupportingText.textContent = data.description;
+    cardSupportingText.textContent = data.location;
     cardSupportingText.style.textAlign = 'center';
     cardWrapper.appendChild(cardSupportingText);
-   //   componentHandler.upgradeElement(cardWrapper);
+    if (typeof componentHandler !== 'undefined') {
+        componentHandler.upgradeElement(cardWrapper);
+    }
     sharedMomentsArea.appendChild(cardWrapper);
 }
 
@@ -70,9 +75,7 @@ function updateUI(data) {
     }
 }
 
-var url = 'https://gram-ed160-default-rtdb.firebaseio.com/post.json';
-var networkDataReceived = false;
-
+// 1) Red
 fetch(url)
     .then(function (res) {
         return res.json();
@@ -85,8 +88,12 @@ fetch(url)
             dataArray.push(data[key]);
         }
         updateUI(dataArray);
+    })
+    .catch(function (err) {
+        console.log('Error en la petición:', err);
     });
 
+// 2) IndexedDB (si la red no ha respondido o no hay conexión)
 if ('indexedDB' in window) {
     readAllData('posts')
         .then(function (data) {
@@ -97,8 +104,9 @@ if ('indexedDB' in window) {
         });
 }
 
+// Envío directo (para navegadores sin Background Sync)
 function sendData() {
-    fetch('https://gram-ed160-default-rtdb.firebaseio.com/post.json', {
+    fetch(url, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -108,13 +116,15 @@ function sendData() {
             id: new Date().toISOString(),
             title: titleInput.value,
             location: locationInput.value,
-            image: 'https://firebasestorage.googleapis.com/v0/b/gram-ed160.appspot.com/o/sf-boat.jpg?alt=media&token=1e5c8d3b-7a2e-4f6c-9d1e-0f3b8c9e5f1a'
+            image: '/src/images/sf-boat.jpg'
         })
     })
         .then(function (res) {
             console.log('Sent data', res);
-            updateUI();
         })
+        .catch(function (err) {
+            console.log('Error enviando:', err);
+        });
 }
 
 form.addEventListener('submit', function (event) {
@@ -152,3 +162,26 @@ form.addEventListener('submit', function (event) {
         sendData();
     }
 });
+
+// Si vuelve el internet o se abre la página con conexión,
+// pedimos otra vez el sync para enviar lo que quedó pendiente
+function registrarSyncPendiente() {
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+        navigator.serviceWorker.ready
+            .then(function (sw) {
+                return sw.sync.register('sync-new-posts');
+            })
+            .catch(function (err) {
+                console.log('No se pudo registrar el sync', err);
+            });
+    }
+}
+
+window.addEventListener('online', function () {
+    console.log('Conexión recuperada, sincronizando...');
+    registrarSyncPendiente();
+});
+
+if (navigator.onLine) {
+    registrarSyncPendiente();
+}
