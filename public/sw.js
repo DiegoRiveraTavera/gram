@@ -1,12 +1,14 @@
 importScripts('/src/js/idb.js');
 importScripts('/src/js/utility.js');
 
-var CACHE_STATIC_NAME = 'static-v5';
-var CACHE_DYNAMIC_NAME = 'dynamic-v5';
+var CACHE_STATIC_NAME = 'static-v7';
+var CACHE_DYNAMIC_NAME = 'dynamic-v7';
 var STATIC_FILES = [
     '/',
     '/index.html',
     '/offline.html',
+    '/manifest.json',
+    '/src/images/icons/app-icon-192x192.png',
     '/src/js/app.js',
     '/src/js/feed.js',
     '/src/js/idb.js',
@@ -115,49 +117,82 @@ self.addEventListener('fetch', function (event) {
     }
 });
 
-// Background Sync: envía a Firebase los posts guardados en 'sync-posts'
+// Envía a Firebase los posts guardados en 'sync-posts'.
+// "enviando" evita que se manden dos veces si el sync y un mensaje llegan juntos.
+var enviando = null;
+
+function enviarPendientes() {
+    if (enviando) {
+        return enviando;
+    }
+    enviando = readAllData('sync-posts')
+        .then(function (data) {
+            if (!data || data.length === 0) {
+                return false;
+            }
+            return Promise.all(data.map(function (dt) {
+                return fetch(FIREBASE_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: dt.id,
+                        title: dt.title,
+                        location: dt.location,
+                        image: DEFAULT_IMAGE
+                    })
+                })
+                    .then(function (res) {
+                        console.log('Sent data', res.status, res);
+                        if (!res.ok) {
+                            throw new Error('Firebase respondió ' + res.status);
+                        }
+                        return deleteItemFromData('sync-posts', dt.id);
+                    });
+            })).then(function () {
+                return true;
+            });
+        })
+        .then(function (huboEnvios) {
+            if (huboEnvios) {
+                // Avisamos a la página para que vuelva a cargar el feed
+                return self.clients.matchAll().then(function (clients) {
+                    clients.forEach(function (client) {
+                        client.postMessage('posts-synced');
+                    });
+                });
+            }
+        })
+        .finally(function () {
+            enviando = null;
+        });
+    return enviando;
+}
+
+// Background Sync (lo dispara Chrome cuando hay conexión)
 self.addEventListener('sync', function (event) {
     console.log('[Service Worker] Background syncing', event);
     if (event.tag === 'sync-new-posts') {
         console.log('[Service Worker] Syncing new Posts');
         event.waitUntil(
-            readAllData('sync-posts')
-                .then(function (data) {
-                    return Promise.all(data.map(function (dt) {
-                        return fetch(FIREBASE_URL, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                id: dt.id,
-                                title: dt.title,
-                                location: dt.location,
-                                image: DEFAULT_IMAGE
-                            })
-                        })
-                            .then(function (res) {
-                                console.log('Sent data', res.status, res);
-                                if (!res.ok) {
-                                    throw new Error('Firebase respondió ' + res.status);
-                                }
-                                return deleteItemFromData('sync-posts', dt.id);
-                            });
-                    }));
-                })
-                .then(function () {
-                    // Avisamos a la página para que vuelva a cargar el feed
-                    return self.clients.matchAll().then(function (clients) {
-                        clients.forEach(function (client) {
-                            client.postMessage('posts-synced');
-                        });
-                    });
-                })
-                .catch(function (err) {
-                    console.log('Error while sending data', err);
-                    throw err; // para que Chrome lo vuelva a intentar
-                })
+            enviarPendientes().catch(function (err) {
+                console.log('Error while sending data', err);
+                throw err; // para que Chrome lo vuelva a intentar
+            })
+        );
+    }
+});
+
+// La página nos pide enviar ya (al volver el internet, al cargar o al crear un post)
+self.addEventListener('message', function (event) {
+    if (event.data === 'sync-now') {
+        console.log('[Service Worker] Envío solicitado por la página');
+        event.waitUntil(
+            enviarPendientes().catch(function (err) {
+                console.log('Sin conexión todavía, se queda pendiente', err.message);
+            })
         );
     }
 });

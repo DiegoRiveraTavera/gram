@@ -167,6 +167,10 @@ form.addEventListener('submit', function (event) {
                         var snackbarContainer = document.querySelector('#confirmation-toast');
                         var data = { message: 'Your Post was saved for syncing!' };
                         snackbarContainer.MaterialSnackbar.showSnackbar(data);
+                        // Si hay internet, se envía de inmediato
+                        if (navigator.onLine && sw.active) {
+                            sw.active.postMessage('sync-now');
+                        }
                     })
                     .catch(function (err) {
                         console.log(err);
@@ -177,12 +181,15 @@ form.addEventListener('submit', function (event) {
     }
 });
 
-// Si vuelve el internet o se abre la página con conexión,
-// pedimos otra vez el sync para enviar lo que quedó pendiente
+// Pide enviar lo pendiente: registra el Background Sync y además
+// le avisa directo al service worker (por si Chrome tarda en dispararlo)
 function registrarSyncPendiente() {
     if ('serviceWorker' in navigator && 'SyncManager' in window) {
         navigator.serviceWorker.ready
             .then(function (sw) {
+                if (sw.active) {
+                    sw.active.postMessage('sync-now');
+                }
                 return sw.sync.register('sync-new-posts');
             })
             .catch(function (err) {
